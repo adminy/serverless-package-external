@@ -1,12 +1,14 @@
 'use strict';
-
-const fs = require('fs')
+const fs = require('fs/promises')
 const path = require('path')
-const cp = require('child_process')
+const util = require('util')
+const exe = util.promisify(require('child_process').exec)
+const exists = path => fs.access(path).then(() => true).catch(() => false)
 
-class PackageExternal {
-  constructor(serverless) {
+module.exports = class {
+  constructor(serverless, _, { log }) {
     this.serverless = serverless
+    this.log = log
     this.options = this.serverless.service?.custom?.packageExternal || {}
     this.hooks = {
       'before:package:initialize': this.beforePackage.bind(this),
@@ -15,43 +17,49 @@ class PackageExternal {
     this.handleExit(['SIGINT', 'SIGTERM', 'SIGQUIT'])
   }
 
-  applyAction(callback) {
+  * actions() {
     const slsFns = this.serverless.service?.functions || {}
     const images = this.serverless.service?.provider?.ecr?.images || {}
-
+    const logs = {
+      log: msg => this.log.success('[sls-py-extern-pkgs] ' + msg),
+      warn: msg => this.log.warning('[sls-py-extern-pkgs] ' + msg)
+    }
     for (const [externalFolder, { functions, source, cmd }] of Object.entries(this.options)) {
-      cmd && source && fs.existsSync(source) && cp.execSync(cmd, { cwd: source, env: process.env })
       for (const name of functions || Object.keys(slsFns)) {
         const slsFn = slsFns[name]
         const imagePath = images?.[slsFn?.image?.name]?.path || slsFn?.image?.path
-        const target = path.join(process.cwd(), imagePath || slsFn?.module || '', externalFolder)
-        callback({ name, externalFolder, source, target, log: this.serverless.cli.log })
+        const target = path.join(process.cwd(), '.serverless', imagePath || slsFn?.module || '', 'requirements')
+        yield { name, externalFolder, source, target, cmd, ...logs }
       }
     }
   }
 
-  beforePackage() {
-    // Symlink external folders
-    this.applyAction(({ name, externalFolder, source, target, log }) => {
-      const noSource = !fs.existsSync(source)
-      if (fs.existsSync(target) || noSource) {
-        const issue = noSource ? `${source} does not exist` : `${target} already exists`
-        log(`[serverless-package-external] cannot Symlink function: ${name}, ${issue}`)
+  async beforePackage() {
+    // Link external folders
+    for (const { name, externalFolder, source, target, cmd, log, warn } of this.actions()) {
+      const noSource = !await exists(source)
+      const cwd = path.join(target, externalFolder)
+      if (await exists(cwd) || noSource) {
+        const issue = noSource ? `${source} does not exist` : `${cwd} already exists`
+        warn(`cannot Link function: ${name}, ${issue}`)
       } else {
-        // Junction is used on windows so that no administrator privileges are required
-        fs.symlinkSync(path.join(process.cwd(), source), target, process.platform === 'win32' && 'junction')
-        log(`[serverless-package-external] Symlinked "${externalFolder}" for function: ${name}`)
+          try {
+            await fs.cp(path.join(process.cwd(), source), cwd,  { recursive: true })
+            cmd && await exe(cmd, { cwd, env: process.env })
+          } catch (err) { warn(err) }
+          log(`Linked "${externalFolder}" for function: ${name}`)
       }
-    })
+    }
   }
 
-  afterPackage() {
-    // Cleanup generated symlinks
-    this.applyAction(({ name, externalFolder, target, log }) => {
-      if (fs.existsSync(target) && fs.rmSync(target, { recursive: true, force: true })) {
-        log(`[serverless-package-external] Cleanup "${externalFolder}" for function: ${name}`)
+  async afterPackage() {
+    // Cleanup packaged external folders
+    for (const { name, externalFolder, target, log } of this.actions()) {
+      const externalPath = path.join(target, externalFolder)
+      if (await exists(externalPath) && await fs.rm(externalPath, { recursive: true, force: true })) {
+        log(`Cleanup "${externalFolder}" for function: ${name}`)
       }
-    })
+    }
   }
 
   handleExit(signals) {
@@ -60,5 +68,3 @@ class PackageExternal {
     }
   }
 }
-
-module.exports = PackageExternal

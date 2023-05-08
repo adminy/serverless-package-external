@@ -1,18 +1,9 @@
 {
-  "name": "serverless-package-external",
-  "version": "1.0.2",
-  "description": "Add external folders to the deploy package",
+  "name": "sls-py-extern-pkgs",
+  "version": "1.0.0",
+  "description": "Add external folders to the sls package and run commands",
   "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/epsagon/serverless-package-external.git"
-  },
-  "author": "Epsagon & adminy",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/epsagon/serverless-package-external/issues"
-  },
-  "homepage": "https://github.com/epsagon/serverless-package-external#readme",
+  "author": "adminy",
   "keywords": [
     "serverless",
     "aws lambda",
@@ -21,8 +12,5 @@
     "external code",
     "common code",
     "lambda python"
-  ],
-  "devDependencies": {
-    "semantic-release": "^21.0.2"
-  }
+  ]
 }
