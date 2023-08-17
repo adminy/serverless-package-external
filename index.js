@@ -47,7 +47,9 @@ module.exports = class {
             if (typeof fs.cp === 'function') {
               await fs.cp(path.join(process.cwd(), source), cwd,  { recursive: true })
             } else {
+              await exe(`mkdir -p "${cwd}"`)
               await exe(`cp -r "${path.join(process.cwd(), source)}" "${cwd}"`)
+
             }
             cmd && await exe(cmd, { cwd, env: process.env })
           } catch (err) { warn(err) }
